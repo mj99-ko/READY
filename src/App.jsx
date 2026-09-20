@@ -1311,8 +1311,10 @@ function Timeline({ experiences, setExperiences, activities, setActivities, addT
   const [endDate, setEndDate] = useState("");
   const [filter, setFilter] = useState("all"); // all | unorganized
   const [selected, setSelected] = useState(new Set());
-  const laneScrollRef = useRef(null);
-  const scrollLanes = (dir) => { if (laneScrollRef.current) laneScrollRef.current.scrollBy({ left: dir * 320, behavior: "smooth" }); };
+  // 가로 스크롤 영역이 "실제로" 넘치는지. 칸 수만 보면 데스크톱처럼 폭이 넉넉한
+  // 경우에도 넘치지 않는데 안내와 탭 정지점이 생긴다.
+  const laneBoxRef = useRef(null);
+  const [laneOverflow, setLaneOverflow] = useState(false);
 
   const startIdx = ymToIndex(TIMELINE_START_YM);
   const endIdx = ymToIndex(nowYM());
@@ -1424,6 +1426,16 @@ function Timeline({ experiences, setExperiences, activities, setActivities, addT
   const lanedItems = assignLanes(allItems);
   const laneCount = Math.max(1, ...lanedItems.map(it => it.lane + 1));
 
+  useEffect(() => {
+    const el = laneBoxRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const check = () => setLaneOverflow(el.scrollWidth > el.clientWidth + 1);
+    check();
+    const ro = new ResizeObserver(check);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [laneCount]);
+
   const rows = [];
   for (let idx = endIdx; idx >= startIdx; idx--) rows.push(idx);
 
@@ -1489,15 +1501,21 @@ function Timeline({ experiences, setExperiences, activities, setActivities, addT
 
         <div style={{ flex: 1, minWidth: 0 }}>
           {laneCount > 1 && (
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }} className="wrap-sm">
-              <span style={{ fontSize: "var(--fs-xs)", color: C.faintText }}>동시에 진행된 활동이 많아서 옆으로 넘어갑니다 ({laneCount}칸)</span>
-              <div style={{ display: "flex", gap: 4 }} className="wrap-sm">
-                <button onClick={() => scrollLanes(-1)} style={{ fontFamily: font, fontSize: "var(--fs-sm)", padding: "var(--sp-1) var(--sp-4)", borderRadius: "var(--r-md)", border: `1px solid ${C.line}`, background: C.panel, color: C.sub, cursor: "pointer" }}>◀</button>
-                <button onClick={() => scrollLanes(1)} style={{ fontFamily: font, fontSize: "var(--fs-sm)", padding: "var(--sp-1) var(--sp-4)", borderRadius: "var(--r-md)", border: `1px solid ${C.line}`, background: C.panel, color: C.sub, cursor: "pointer" }}>▶</button>
-              </div>
+            <div style={{ marginBottom: 6 }}>
+              <span style={{ fontSize: "var(--fs-xs)", color: C.faintText }}>
+                동시에 진행된 활동이 {laneCount}칸으로 나뉘어 있습니다{laneOverflow ? " — 옆으로 밀어서 보세요" : ""}
+              </span>
             </div>
           )}
-          <div ref={laneScrollRef} style={{ overflowX: "auto", scrollbarWidth: "thin" }}>
+          {/* 가로 스크롤 영역. 포커스를 받을 수 있어야 키보드로도 좌우 이동이 된다
+              (브라우저가 포커스된 overflow 컨테이너를 화살표 키로 스크롤한다).
+              예전에는 ◀▶ 버튼이 유일한 키보드 경로였는데, 터치·마우스에서는
+              스와이프로 충분해 버튼을 걷어내고 이 방식으로 바꿨다.
+              넘치지 않을 땐 스크롤할 것이 없으므로 탭 순서에 넣지 않는다. */}
+          <div
+            ref={laneBoxRef}
+            {...(laneOverflow ? { tabIndex: 0, role: "region", "aria-label": `타임라인 활동 ${laneCount}칸, 좌우로 스크롤` } : {})}
+            style={{ overflowX: "auto", scrollbarWidth: "thin" }}>
           <div style={{ position: "relative", height: totalRows * TIMELINE_ROW_H, display: "flex", gap: 12, paddingLeft: 12, borderLeft: `1px solid ${C.line}`, minWidth: laneCount * 162 }}>
             {Array.from({ length: laneCount }).map((_, laneIdx) => (
               <div key={laneIdx} style={{ position: "relative", width: 150, flexShrink: 0 }}>
